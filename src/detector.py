@@ -1,0 +1,87 @@
+from __future__ import annotations
+
+import numpy as np
+from ultralytics import YOLO
+
+
+class PPEDetector:
+    OVERLAP_THRESHOLD = 0.15
+
+    def __init__(self, human_model_path: str, ppe_model_path: str, conf: float = 0.25) -> None:
+        print(f"  Loading human model : {human_model_path}")
+        self.human_model = YOLO(human_model_path)
+
+        print(f"  Loading PPE model   : {ppe_model_path}")
+        self.ppe_model = YOLO(ppe_model_path)
+        self.ppe_model.overrides["conf"] = conf
+        self.ppe_model.overrides["iou"] = 0.45
+        self.ppe_model.overrides["max_det"] = 1000
+
+        # Read class names directly from the model
+        self.class_names: dict[int, str] = self.ppe_model.names
+        # A class is a violation if its name starts with "no-" or "no_"
+        self.violation_classes = {
+            cid for cid, name in self.class_names.items()
+            if name.lower().startswith("no-") or name.lower().startswith("no_")
+        }
+        # Ignore "person" class from PPE model (handled by human model)
+        self.ignore_classes = {
+            cid for cid, name in self.class_names.items()
+            if name.lower() == "person"
+        }
+
+        self.conf = conf
+
+    def detect(self, frame: np.ndarray) -> tuple[list[dict], list[dict]]:
+        # Stage 1: human detection
+        human_res = self.human_model(frame, conf=self.conf, verbose=False)[0]
+        human_boxes = list(human_res.boxes.xyxy.cpu().numpy()) if len(human_res.boxes) > 0 else []
+
+        # Stage 2: PPE detection on full frame
+        ppe_res = self.ppe_model(frame, conf=self.conf, verbose=False)[0]
+        ppe_detections: list[dict] = []
+
+        if len(ppe_res.boxes) > 0:
+            boxes     = ppe_res.boxes.xyxy.cpu().numpy()
+            scores    = ppe_res.boxes.conf.cpu().numpy()
+            class_ids = ppe_res.boxes.cls.cpu().numpy().astype(int)
+
+            for i in range(len(boxes)):
+                cid = int(class_ids[i])
+                if cid in self.ignore_classes:
+                    continue
+                ppe_detections.append({
+                    "box":          boxes[i],
+                    "conf":         float(scores[i]),
+                    "class_name":   self.class_names[cid],
+                    "is_violation": cid in self.violation_classes,
+                })
+
+        persons = self._associate(human_boxes, ppe_detections)
+        return persons, ppe_detections
+
+    def _associate(self, human_boxes: list, ppe_detections: list[dict]) -> list[dict]:
+        persons = []
+        for box in human_boxes:
+            person: dict = {"box": box, "ppe": [], "violations": [], "compliant": True}
+            for ppe in ppe_detections:
+                if self._ioa(box, ppe["box"]) >= self.OVERLAP_THRESHOLD:
+                    person["ppe"].append(ppe)
+                    if ppe["is_violation"]:
+                        person["violations"].append(ppe["class_name"])
+                        person["compliant"] = False
+            persons.append(person)
+        return persons
+
+    @staticmethod
+    def _ioa(person_box: np.ndarray, ppe_box: np.ndarray) -> float:
+        px1, py1, px2, py2 = person_box
+        ex1, ey1, ex2, ey2 = ppe_box
+        ix1, iy1 = max(px1, ex1), max(py1, ey1)
+        ix2, iy2 = min(px2, ex2), min(py2, ey2)
+        if ix2 <= ix1 or iy2 <= iy1:
+            return 0.0
+        inter = (ix2 - ix1) * (iy2 - iy1)
+        ppe_area = max((ex2 - ex1) * (ey2 - ey1), 1e-6)
+        return float(inter / ppe_area)
+
