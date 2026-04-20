@@ -52,6 +52,8 @@ def process_video(video_path, detector, *, start=0.0, save=False, show=True):
     width   = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height  = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total   = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    start_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+    remaining   = max(total - start_frame, 1)
 
     writer = None
     if save:
@@ -81,7 +83,7 @@ def process_video(video_path, detector, *, start=0.0, save=False, show=True):
 
         frame_idx += 1
         if frame_idx % 50 == 0:
-            print(f"    {frame_idx}/{total} ({100*frame_idx//total}%)  FPS={fps_cur:.1f}")
+            print(f"    {frame_idx}/{remaining} ({100*frame_idx//remaining}%)  FPS={fps_cur:.1f}")
 
     cap.release()
     if writer:

@@ -16,6 +16,9 @@ videos/
 # Generated output videos
 outputs/
 
+# Extracted frames (data files)
+frames/
+
 # macOS
 .DS_Store
 
