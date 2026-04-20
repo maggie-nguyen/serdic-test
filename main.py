@@ -10,7 +10,7 @@ from src.detector import PPEDetector
 from src.visualizer import draw_results
 
 HUMAN_MODEL   = "models/20260324_human.pt"
-PPE_MODEL     = "models/ppe_detection.pt"
+PPE_MODEL     = "models/ppe_model1.pt"
 DEFAULT_VIDEO = "videos/GUNSAN_cam14_20251222_183405.mp4"
 OUTPUT_DIR    = Path("outputs")
 
@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--all", "-a", action="store_true")
     p.add_argument("--human-model", default=HUMAN_MODEL)
     p.add_argument("--ppe-model", default=PPE_MODEL)
-    p.add_argument("--conf", "-c", type=float, default=0.25)
+    p.add_argument("--conf", "-c", type=float, default=0.40)
     p.add_argument("--start", type=float, default=0.0, help="Start time in seconds")
     p.add_argument("--save", "-s", action="store_true")
     p.add_argument("--no-show", action="store_true")
