@@ -32,16 +32,21 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--human-model", default=HUMAN_MODEL)
     p.add_argument("--ppe-model", default=PPE_MODEL)
     p.add_argument("--conf", "-c", type=float, default=0.25)
+    p.add_argument("--start", type=float, default=0.0, help="Start time in seconds")
     p.add_argument("--save", "-s", action="store_true")
     p.add_argument("--no-show", action="store_true")
     return p.parse_args()
 
 
-def process_video(video_path, detector, *, save=False, show=True):
+def process_video(video_path, detector, *, start=0.0, save=False, show=True):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print(f"  [ERROR] Cannot open: {video_path}")
         return
+
+    if start > 0:
+        cap.set(cv2.CAP_PROP_POS_MSEC, start * 1000)
+        print(f"  Seeking to {start:.1f}s ...")
 
     fps_src = cap.get(cv2.CAP_PROP_FPS) or 25.0
     width   = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -92,7 +97,7 @@ def main():
 
     for vp in (ALL_VIDEOS if args.all else [args.video]):
         print(f"Processing: {vp}")
-        process_video(vp, detector, save=args.save, show=not args.no_show)
+        process_video(vp, detector, start=args.start, save=args.save, show=not args.no_show)
         print()
 
     cv2.destroyAllWindows()
