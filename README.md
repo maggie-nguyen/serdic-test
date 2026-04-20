@@ -27,13 +27,13 @@ source venv/bin/activate        # macOS / Linux
 pip install -r requirement.txt
 ```
 
-### 3. Download the PPE detection model (run once)
+### 3. Download the PPE detection models (run once)
 
 ```bash
 python setup_models.py
 ```
 
-This downloads `keremberke/yolov8m-ppev1` from HuggingFace (~50 MB) and saves it to `models/ppe_detection.pt`.
+This downloads specialized YOLOv8 models from HuggingFace and saves them to the `models/` directory. By default, the system uses `models/ppe_model3.pt` (Hexmon/vyra-yolo-ppe-detection) which supports all required items including **Gloves**.
 
 > The provided human detection model (`models/20260324_human.pt`) must already be present.
 
@@ -76,10 +76,12 @@ options:
   --video VIDEO         Input video path (default: videos/GUNSAN_cam14_20251222_183405.mp4)
   --all                 Process all sample videos
   --human-model PATH    Path to human detection model (default: models/20260324_human.pt)
-  --ppe-model PATH      Path to PPE detection model   (default: models/ppe_detection.pt)
-  --conf FLOAT          Confidence threshold (default: 0.30)
+  --ppe-model PATH      Path to PPE detection model   (default: models/ppe_model3.pt)
+  --conf FLOAT          Confidence threshold (default: 0.25)
   --save                Save annotated output to outputs/
   --no-show             Do not display the live window
+  --scale FLOAT         Scale factor for resolution (e.g. 0.5 for half size)
+  --skip INT            Process every N-th frame (e.g. 2 to skip half the frames)
 ```
 
 ---
@@ -94,7 +96,9 @@ serdic-test/
 ├── README.md
 ├── models/
 │   ├── 20260324_human.pt          # Provided human detection model (Stage 1)
-│   └── ppe_detection.pt           # Downloaded PPE model (Stage 2)
+│   ├── ppe_model1.pt              # PPE Model (Hansung - Helmet/Vest/Mask)
+│   ├── ppe_model2.pt              # PPE Model (Tanishjain - + Gloves, YOLOv8n)
+│   └── ppe_model3.pt              # PPE Model (Hexmon - + Gloves, YOLOv8m)
 ├── src/
 │   ├── detector.py                # Two-stage detection pipeline
 │   └── visualizer.py              # Frame annotation & HUD
@@ -114,8 +118,8 @@ Video Frame
            → Bounding boxes around each worker
     │
     ▼
-[Stage 2]  PPE Model (keremberke/yolov8m-ppev1)
-           → Detects on full frame: Hardhat, Mask, Safety Vest (+ violation classes)
+[Stage 2]  PPE Model (Hexmon/vyra-yolo-ppe-detection)
+           → Detects on full frame: Hardhat, Mask, Safety Vest, Gloves (+ violation classes)
     │
     ▼
 [Association]  Each PPE box is matched to the nearest person box (IoA ≥ 0.15)
@@ -131,13 +135,13 @@ Annotated Frame  →  Live window  / saved .mp4
 | 🟢 Green person box  | Worker wearing required PPE |
 | 🔴 Red person box    | PPE violation detected |
 | ⬜ Grey person box   | Worker detected, no PPE in frame |
-| 🟢 Green item box    | Compliant item (Hardhat / Mask / Safety Vest) |
-| 🔴 Red item box      | Violation (NO-Hardhat / NO-Mask / NO-Safety Vest) |
+| 🟢 Green item box    | Compliant item (Helmet / Mask / Safety Vest / Gloves) |
+| 🔴 Red item box      | Violation (NO-Helmet / NO-Mask / NO-Safety Vest / NO-Gloves) |
 
 ---
 
 ## Known Limitations
 
-- **Gloves**: The PPE model (`keremberke/yolov8m-ppev1`) does not include a Gloves class. Glove detection requires a specialised model or fine-tuning on labeled glove data.
 - **Lighting**: Low-light CCTV footage may reduce accuracy.
 - **Occlusion**: Heavily overlapping workers may cause missed or merged detections.
+- **Temporal Stability**: Processing is per-frame; results may flicker occasionally. Tracking could be added for more stability.

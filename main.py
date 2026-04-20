@@ -10,7 +10,7 @@ from src.detector import PPEDetector
 from src.visualizer import draw_results
 
 HUMAN_MODEL   = "models/20260324_human.pt"
-PPE_MODEL     = "models/ppe_detection.pt"
+PPE_MODEL     = "models/ppe_model3.pt"
 DEFAULT_VIDEO = "videos/GUNSAN_cam14_20251222_183405.mp4"
 OUTPUT_DIR    = Path("outputs")
 
@@ -34,28 +34,34 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--conf", "-c", type=float, default=0.25)
     p.add_argument("--save", "-s", action="store_true")
     p.add_argument("--no-show", action="store_true")
+    p.add_argument("--scale", type=float, default=1.0, help="Scale factor for resolution (e.g. 0.5)")
+    p.add_argument("--skip", type=int, default=1, help="Process every N-th frame")
     return p.parse_args()
 
 
-def process_video(video_path, detector, *, save=False, show=True):
+def process_video(video_path, detector, *, save=False, show=True, scale=1.0, skip=1):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print(f"  [ERROR] Cannot open: {video_path}")
         return
 
     fps_src = cap.get(cv2.CAP_PROP_FPS) or 25.0
-    width   = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height  = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    width   = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) * scale)
+    height  = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) * scale)
     total   = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     writer = None
     if save:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         out_path = OUTPUT_DIR / f"{Path(video_path).stem}_ppe.mp4"
-        writer   = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*"mp4v"), fps_src, (width, height))
-        print(f"  Saving to: {out_path}")
+        # Output FPS should be adjusted if we are skipping frames but want real-time playback speed, 
+        # or kept if we want a "fast-forward" effect. Usually for PPE demo, we want real-time speed.
+        out_fps = fps_src / skip
+        writer   = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*"mp4v"), out_fps, (width, height))
+        print(f"  Saving to: {out_path} ({width}x{height} @ {out_fps:.1f}fps)")
 
     frame_idx = 0
+    processed_count = 0
     t0 = time.time()
 
     while cap.isOpened():
@@ -63,8 +69,15 @@ def process_video(video_path, detector, *, save=False, show=True):
         if not ret:
             break
 
+        if frame_idx % skip != 0:
+            frame_idx += 1
+            continue
+
+        if scale != 1.0:
+            frame = cv2.resize(frame, (width, height))
+
         persons, ppe_detections = detector.detect(frame)
-        fps_cur   = frame_idx / max(time.time() - t0, 1e-6)
+        fps_cur   = (processed_count + 1) / max(time.time() - t0, 1e-6)
         annotated = draw_results(frame, persons, ppe_detections, fps=fps_cur)
 
         if writer:
@@ -75,13 +88,14 @@ def process_video(video_path, detector, *, save=False, show=True):
                 break
 
         frame_idx += 1
-        if frame_idx % 50 == 0:
+        processed_count += 1
+        if frame_idx % (50 * skip) == 0 or frame_idx == total:
             print(f"    {frame_idx}/{total} ({100*frame_idx//total}%)  FPS={fps_cur:.1f}")
 
     cap.release()
     if writer:
         writer.release()
-    print(f"  Done — {frame_idx} frames in {time.time()-t0:.1f}s")
+    print(f"  Done — {processed_count} frames processed in {time.time()-t0:.1f}s")
 
 
 def main():
@@ -92,7 +106,7 @@ def main():
 
     for vp in (ALL_VIDEOS if args.all else [args.video]):
         print(f"Processing: {vp}")
-        process_video(vp, detector, save=args.save, show=not args.no_show)
+        process_video(vp, detector, save=args.save, show=not args.no_show, scale=args.scale, skip=args.skip)
         print()
 
     cv2.destroyAllWindows()

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import torch
 import numpy as np
 from ultralytics import YOLO
 
@@ -8,11 +10,30 @@ class PPEDetector:
     OVERLAP_THRESHOLD = 0.15
 
     def __init__(self, human_model_path: str, ppe_model_path: str, conf: float = 0.25) -> None:
+        # Auto-detect device (CUDA, ROCm, MPS, or CPU)
+        if torch.cuda.is_available():
+            self.device = "cuda"
+            # Check for ROCm (AMD) specifically for logging
+            is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+            if is_rocm:
+                # AMD Radeon 780M (gfx1101) needs an override for ROCm
+                os.environ["HSA_OVERRIDE_GFX_VERSION"] = "11.0.1"
+                dev_info = "ROCm/AMD"
+            else:
+                dev_info = "CUDA/NVIDIA"
+            print(f"  Using device        : {self.device} ({dev_info})")
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+            print(f"  Using device        : {self.device} (Apple Silicon)")
+        else:
+            self.device = "cpu"
+            print(f"  Using device        : {self.device} (Falling back to CPU)")
+
         print(f"  Loading human model : {human_model_path}")
-        self.human_model = YOLO(human_model_path)
+        self.human_model = YOLO(human_model_path).to(self.device)
 
         print(f"  Loading PPE model   : {ppe_model_path}")
-        self.ppe_model = YOLO(ppe_model_path)
+        self.ppe_model = YOLO(ppe_model_path).to(self.device)
         self.ppe_model.overrides["conf"] = conf
         self.ppe_model.overrides["iou"] = 0.45
         self.ppe_model.overrides["max_det"] = 1000
@@ -84,4 +105,3 @@ class PPEDetector:
         inter = (ix2 - ix1) * (iy2 - iy1)
         ppe_area = max((ex2 - ex1) * (ey2 - ey1), 1e-6)
         return float(inter / ppe_area)
-
