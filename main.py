@@ -32,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--human-model", default=HUMAN_MODEL)
     p.add_argument("--ppe-model", default=PPE_MODEL)
     p.add_argument("--conf", "-c", type=float, default=0.25)
+    p.add_argument("--start", type=float, default=0.0, help="Start time in seconds")
     p.add_argument("--save", "-s", action="store_true")
     p.add_argument("--no-show", action="store_true")
     p.add_argument("--scale", type=float, default=1.0, help="Scale factor for resolution (e.g. 0.5)")
@@ -39,16 +40,22 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def process_video(video_path, detector, *, save=False, show=True, scale=1.0, skip=1):
+def process_video(video_path, detector, *, start=0.0, save=False, show=True, scale=1.0, skip=1):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print(f"  [ERROR] Cannot open: {video_path}")
         return
 
+    if start > 0:
+        cap.set(cv2.CAP_PROP_POS_MSEC, start * 1000)
+        print(f"  Seeking to {start:.1f}s ...")
+
     fps_src = cap.get(cv2.CAP_PROP_FPS) or 25.0
     width   = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) * scale)
     height  = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) * scale)
     total   = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    start_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+    remaining   = max(total - start_frame, 1)
 
     writer = None
     if save:
@@ -90,7 +97,7 @@ def process_video(video_path, detector, *, save=False, show=True, scale=1.0, ski
         frame_idx += 1
         processed_count += 1
         if frame_idx % (50 * skip) == 0 or frame_idx == total:
-            print(f"    {frame_idx}/{total} ({100*frame_idx//total}%)  FPS={fps_cur:.1f}")
+            print(f"    {frame_idx}/{remaining} ({100*frame_idx//remaining}%)  FPS={fps_cur:.1f}")
 
     cap.release()
     if writer:
@@ -106,7 +113,15 @@ def main():
 
     for vp in (ALL_VIDEOS if args.all else [args.video]):
         print(f"Processing: {vp}")
-        process_video(vp, detector, save=args.save, show=not args.no_show, scale=args.scale, skip=args.skip)
+        process_video(
+            vp,
+            detector,
+            start=args.start,
+            save=args.save,
+            show=not args.no_show,
+            scale=args.scale,
+            skip=args.skip,
+        )
         print()
 
     cv2.destroyAllWindows()
