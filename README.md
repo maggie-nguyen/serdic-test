@@ -22,12 +22,15 @@ pip install -r requirement.txt
 
 ### 3. Setup Models
 
-Downloads the required PPE baseline model (Hansung-Cho YOLOv8) from HuggingFace.
+### 3. Download the PPE detection models (run once)
 
 ```bash
 python setup_models.py
 ```
-> Note: The provided human detection model (`models/20260324_human.pt`) must exist in the `models/` directory prior to running inference.
+
+This downloads specialized YOLOv8 models from HuggingFace and saves them to the `models/` directory. By default, the system uses `models/ppe_model3.pt` (Hexmon/vyra-yolo-ppe-detection) which supports all required items including **Gloves**.
+
+> The provided human detection model (`models/20260324_human.pt`) must already be present.
 
 ---
 
@@ -51,32 +54,81 @@ Processes all `.mp4` files in the `videos/` directory automatically.
 python main.py --all --save --no-show
 ```
 
----
+### Full options
 
-## 🏗 System Architecture
+```
+python main.py --help
 
-The PoC implements a **Two-Stage Detection Pipeline** to maximize efficiency and localized association:
-
-1. **Stage 1 (Localization):** Provided Human Detection Model (`20260324_human.pt`) scans the frame to extract worker bounding boxes.
-2. **Stage 2 (Classification):** PPE Model (`ppe_model1.pt`) evaluates the full frame for Safety items (Helmet, Vest) and Violation instances (No Helmet, No Vest).
-3. **Association (IoA):** Custom spatial association logic (Intersection over Area ≥ 0.15) maps detected PPE items to the respective worker bounding box, ensuring real-time individual compliance tracking.
-
-### HUD Reference
-- 🟢 **Green Bounding Box:** Worker is wearing required PPE.
-- 🔴 **Red Bounding Box:** Worker is violating PPE requirements.
-
----
-
-## 📊 Evaluation & Utilities
-
-### Proxy Calibration (`check_detections.py`)
-To ensure optimal performance without labeled ground truth, a proxy evaluation script is included. It measures the `mean confidence distribution` of the baseline model across all frames, determining that `conf=0.40` is the optimal threshold to filter background noise while retaining high-confidence true positives.
-
-### Data Engineering (`extract_frames.py`)
-A utility script used to extract sequential frames from CCTV videos, automatically filtering out frames devoid of workers using the Stage 1 Human model. This readies the dataset for domain-specific fine-tuning (Approach A).
+options:
+  --video VIDEO         Input video path (default: videos/GUNSAN_cam14_20251222_183405.mp4)
+  --all                 Process all sample videos
+  --human-model PATH    Path to human detection model (default: models/20260324_human.pt)
+  --ppe-model PATH      Path to PPE detection model   (default: models/ppe_model3.pt)
+  --conf FLOAT          Confidence threshold (default: 0.25)
+  --save                Save annotated output to outputs/
+  --no-show             Do not display the live window
+  --scale FLOAT         Scale factor for resolution (e.g. 0.5 for half size)
+  --skip INT            Process every N-th frame (e.g. 2 to skip half the frames)
+```
 
 ---
 
-## ⚠️ Known Limitations
-- **Severe Domain Gap (Masks & Gloves):** The current public baseline model is highly effective for large PPE (Helmets, Vests) but fails to reliably detect high-resolution micro-objects (Masks, Gloves) due to the low effective pixel density inherent in top-down CCTV angles. 
-- **Proposed Solution:** Utilize the extracted frames to annotate a custom dataset and apply transfer learning (Fine-tuning YOLOv8) to adapt to the CCTV domain.
+## Project Structure
+
+```
+serdic-test/
+├── main.py                        # Entry point
+├── setup_models.py                # One-time model download
+├── requirement.txt
+├── README.md
+├── models/
+│   ├── 20260324_human.pt          # Provided human detection model (Stage 1)
+│   ├── ppe_model1.pt              # PPE Model (Hansung - Helmet/Vest/Mask)
+│   ├── ppe_model2.pt              # PPE Model (Tanishjain - + Gloves, YOLOv8n)
+│   └── ppe_model3.pt              # PPE Model (Hexmon - + Gloves, YOLOv8m)
+├── src/
+│   ├── detector.py                # Two-stage detection pipeline
+│   └── visualizer.py              # Frame annotation & HUD
+├── videos/                        # Provided sample videos
+└── outputs/                       # Saved annotated videos (created on run)
+```
+
+---
+
+## Detection Pipeline
+
+```
+Video Frame
+    │
+    ▼
+[Stage 1]  Provided Human Model (20260324_human.pt)
+           → Bounding boxes around each worker
+    │
+    ▼
+[Stage 2]  PPE Model (Hexmon/vyra-yolo-ppe-detection)
+           → Detects on full frame: Hardhat, Mask, Safety Vest, Gloves (+ violation classes)
+    │
+    ▼
+[Association]  Each PPE box is matched to the nearest person box (IoA ≥ 0.15)
+    │
+    ▼
+Annotated Frame  →  Live window  / saved .mp4
+```
+
+### Visual indicators
+
+| Colour | Meaning |
+|--------|---------|
+| 🟢 Green person box  | Worker wearing required PPE |
+| 🔴 Red person box    | PPE violation detected |
+| ⬜ Grey person box   | Worker detected, no PPE in frame |
+| 🟢 Green item box    | Compliant item (Helmet / Mask / Safety Vest / Gloves) |
+| 🔴 Red item box      | Violation (NO-Helmet / NO-Mask / NO-Safety Vest / NO-Gloves) |
+
+---
+
+## Known Limitations
+
+- **Lighting**: Low-light CCTV footage may reduce accuracy.
+- **Occlusion**: Heavily overlapping workers may cause missed or merged detections.
+- **Temporal Stability**: Processing is per-frame; results may flicker occasionally. Tracking could be added for more stability.

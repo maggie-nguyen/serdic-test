@@ -9,28 +9,44 @@ LABEL_MAP = {
     "No-Hardhat":     "No Helmet",
     "hardhat":        "Helmet",
     "no-hardhat":     "No Helmet",
+    "NO-Hardhat":     "No Helmet",
     "Safety Vest":    "Safety Vest",
     "No-Safety Vest": "No Safety Vest",
     "safety vest":    "Safety Vest",
     "no-safety vest": "No Safety Vest",
+    "NO-Safety Vest": "No Safety Vest",
     "Mask":           "Mask",
     "No-Mask":        "No Mask",
     "mask":           "Mask",
+    "face":           "Face",
     "no-mask":        "No Mask",
+    "no_mask":        "No Mask",
+    "NO-Mask":        "No Mask",
     "Gloves":         "Gloves",
     "glove":          "Gloves",
+    "hand":           "Hand",
     "no_glove":       "No Gloves",
+    "no-glove":       "No Gloves",
+    "NO-Gloves":      "No Gloves",
+    "Goggles":        "Goggles",
+    "NO-Goggles":     "No Goggles",
+    "Fall-Detected":  "FALL DETECTED",
 }
 
 COLORS: dict[str, tuple[int, int, int]] = {
     "Helmet":          (50,  200,  50),
     "Safety Vest":     (50,  220, 130),
     "Mask":            (30,  180, 180),
+    "Face":            (80,  120, 220),
     "Gloves":          (80,  200,  80),
+    "Hand":            (160, 120, 220),
+    "Goggles":         (200, 200,  50),
     "No Helmet":       (30,   30, 220),
     "No Safety Vest":  (60,   80, 220),
     "No Mask":         (20,   60, 200),
     "No Gloves":       (40,   40, 200),
+    "No Goggles":      (0,    0,   255),
+    "FALL DETECTED":   (0,    0,   255),
     "safe":            (40,  200,  40),
     "violation":       (30,   30, 220),
     "unknown":         (180, 180, 180),
@@ -61,16 +77,20 @@ def _draw_ppe_box(frame, ppe):
 
 def _draw_person_box(frame, person):
     x1, y1, x2, y2 = person["box"].astype(int)
+    h_conf = person.get("conf", 0.0)
+    prefix = f"Human {h_conf:.2f}"
+    
     if not person["ppe"]:
-        color, status = COLORS["unknown"], "Worker"
+        color, status = COLORS["unknown"], f"{prefix} Worker"
     elif person["compliant"]:
-        color, status = COLORS["safe"], "SAFE"
+        color, status = COLORS["safe"], f"{prefix} SAFE"
     else:
         violations = [LABEL_MAP.get(v, v) for v in person["violations"]]
         color  = COLORS["violation"]
-        status = f"VIOLATION: {', '.join(violations)}"
-    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
-    _put_label(frame, status, x1, y2 + 18, color, font_scale=0.55, thickness=2)
+        status = f"{prefix} VIOLATION: {', '.join(violations)}"
+    
+    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+    _put_label(frame, status, x1, y2 + 18, color)
 
 
 def _draw_hud(frame, persons, fps):
