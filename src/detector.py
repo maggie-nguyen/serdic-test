@@ -7,7 +7,13 @@ from ultralytics import YOLO
 
 
 class PPEDetector:
-    def __init__(self, human_model_path: str, ppe_model_path: str, conf: float = 0.25) -> None:
+    def __init__(
+        self,
+        human_model_path: str,
+        ppe_model_path: str,
+        conf: float = 0.25,
+        glove_mask_model_path: str | None = None,
+    ) -> None:
         # Auto-detect device (CUDA, ROCm, MPS, or CPU)
         if torch.cuda.is_available():
             self.device = "cuda"
@@ -36,6 +42,16 @@ class PPEDetector:
         self.ppe_model.overrides["iou"] = 0.45
         self.ppe_model.overrides["max_det"] = 1000
 
+        self.glove_mask_model = None
+        self.glove_mask_names: dict[int, str] = {}
+        if glove_mask_model_path:
+            print(f"  Loading glove-mask  : {glove_mask_model_path}")
+            self.glove_mask_model = YOLO(glove_mask_model_path).to(self.device)
+            self.glove_mask_model.overrides["conf"] = conf
+            self.glove_mask_model.overrides["iou"] = 0.45
+            self.glove_mask_model.overrides["max_det"] = 1000
+            self.glove_mask_names = self.glove_mask_model.names
+
         self.class_names = self.ppe_model.names
         self.violation_classes = {
             cid for cid, name in self.class_names.items()
@@ -46,6 +62,77 @@ class PPEDetector:
             if name.lower() == "person"
         }
         self.conf = conf
+
+    def _run_glove_mask(self, crop: np.ndarray, x1: int, y1: int) -> tuple[list[dict], bool, bool, bool, bool]:
+        if self.glove_mask_model is None:
+            return [], False, False, False, False
+
+        gm_res = self.glove_mask_model(crop, conf=self.conf, verbose=False)[0]
+        if len(gm_res.boxes) == 0:
+            return [], False, False, False, False
+
+        gm_boxes = gm_res.boxes.xyxy.cpu().numpy()
+        gm_scores = gm_res.boxes.conf.cpu().numpy()
+        gm_cids = gm_res.boxes.cls.cpu().numpy().astype(int)
+
+        detections: list[dict] = []
+        has_face = False
+        has_mask = False
+        has_hand = False
+        has_glove = False
+        first_face_box = None
+        first_hand_box = None
+
+        for j in range(len(gm_boxes)):
+            cid = int(gm_cids[j])
+            class_name = str(self.glove_mask_names.get(cid, str(cid))).lower()
+            px1, py1, px2, py2 = gm_boxes[j]
+            global_box = np.array([px1 + x1, py1 + y1, px2 + x1, py2 + y1])
+
+            if class_name == "face":
+                has_face = True
+                if first_face_box is None:
+                    first_face_box = global_box
+            elif class_name == "mask":
+                has_mask = True
+            elif class_name == "hand":
+                has_hand = True
+                if first_hand_box is None:
+                    first_hand_box = global_box
+            elif class_name == "glove":
+                has_glove = True
+
+            detections.append(
+                {
+                    "box": global_box,
+                    "conf": float(gm_scores[j]),
+                    "class_name": class_name,
+                    "is_violation": False,
+                }
+            )
+
+        # Inference rules requested by user:
+        # hand present without glove -> no_glove, face present without mask -> no-mask.
+        if has_hand and not has_glove and first_hand_box is not None:
+            detections.append(
+                {
+                    "box": first_hand_box,
+                    "conf": 1.0,
+                    "class_name": "no_glove",
+                    "is_violation": True,
+                }
+            )
+        if has_face and not has_mask and first_face_box is not None:
+            detections.append(
+                {
+                    "box": first_face_box,
+                    "conf": 1.0,
+                    "class_name": "no-mask",
+                    "is_violation": True,
+                }
+            )
+
+        return detections, has_face, has_mask, has_hand, has_glove
 
     def detect(self, frame: np.ndarray) -> tuple[list[dict], list[dict]]:
         # Stage 1: human detection
@@ -106,6 +193,14 @@ class PPEDetector:
                         if ppe_info["is_violation"]:
                             person_violations.append(ppe_info["class_name"])
                             person_compliant = False
+
+                gm_detections, _, _, _, _ = self._run_glove_mask(crop, x1, y1)
+                for gm_info in gm_detections:
+                    person_ppe.append(gm_info)
+                    all_ppe_detections.append(gm_info)
+                    if gm_info["is_violation"]:
+                        person_violations.append(gm_info["class_name"])
+                        person_compliant = False
                 
                 persons.append({
                     "box":        h_box,

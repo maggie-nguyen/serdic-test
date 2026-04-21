@@ -1,5 +1,10 @@
 # Project Backlog & Decision Log
 
+### [2026-04-21] Decision: Optional Glove-Mask Specialist Model
+- **Action**: Added `--glove-mask` path argument in `main.py` and integrated optional glove/mask model inference into `src/detector.py` alongside the main PPE model.
+- **Decision**: Run the specialist model on each detected human crop and fuse detections with the existing PPE pipeline.
+- **Rationale**: Enables support for classes (`face`, `glove`, `hand`, `mask`) while preserving the primary PPE model behavior. Implemented rules: `hand` without `glove` => `No Gloves`, and `face` without `mask` => `No Mask`.
+
 ### [2026-04-21] Decision: Crop-Based PPE Inference & Confidence Display
 - **Action**: Refactored `src/detector.py` to perform PPE inference on human crops and updated `src/visualizer.py` to show "Human [conf]" prefix.
 - **Decision**: Use human detection crops as input for Stage 2 (PPE detection) instead of full-frame association.

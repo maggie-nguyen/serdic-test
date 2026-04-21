@@ -16,6 +16,7 @@ from src.visualizer import draw_results
 
 HUMAN_MODEL   = "models/20260324_human.pt"
 PPE_MODEL     = "models/ppe_model3.pt"
+GLOVE_MASK_MODEL = "models/best-glove-mask-only.pt"
 DEFAULT_VIDEO = "videos/GUNSAN_cam14_20251222_183405.mp4"
 OUTPUT_DIR    = Path("outputs")
 
@@ -36,6 +37,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--all", "-a", action="store_true", help="Process all predefined industrial videos")
     p.add_argument("--human-model", default=HUMAN_MODEL, help="Path to the human detection model (default: %(default)s)")
     p.add_argument("--ppe-model", default=PPE_MODEL, help="Path to the PPE detection model (default: %(default)s)")
+    p.add_argument(
+        "--glove-mask",
+        default=GLOVE_MASK_MODEL,
+        help=(
+            "Optional path to a glove/mask specialist model "
+            "(classes: face, glove, hand, mask)."
+        ),
+    )
     p.add_argument("--conf", "-c", type=float, default=0.25, help="Confidence threshold for detections (default: %(default)s)")
     p.add_argument("--start", type=float, default=0.0, help="Start processing from this time in seconds (default: %(default)s)")
     p.add_argument("--save", "-s", action="store_true", help="Save the annotated output video to the 'outputs' directory")
@@ -113,7 +122,12 @@ def process_video(video_path, detector, *, start=0.0, save=False, show=True, sca
 def main():
     args = parse_args()
     print("\nLoading models ...")
-    detector = PPEDetector(args.human_model, args.ppe_model, conf=args.conf)
+    detector = PPEDetector(
+        args.human_model,
+        args.ppe_model,
+        conf=args.conf,
+        glove_mask_model_path=args.glove_mask,
+    )
     print("Ready.\n")
 
     for vp in (ALL_VIDEOS if args.all else [args.video]):
