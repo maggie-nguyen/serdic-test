@@ -11,18 +11,27 @@ class PPEDetector:
 
         print(f"  Loading PPE model   : {ppe_model_path}")
         self.ppe_model = YOLO(ppe_model_path)
-        self.ppe_model.overrides["conf"]    = conf
         self.ppe_model.overrides["iou"]     = 0.45
         self.ppe_model.overrides["max_det"] = 1000
 
         self.class_names = self.ppe_model.names
+        
+        # Strictly filter for only required classes and their violations
+        self.allowed_classes = {
+            "hardhat", "no-hardhat", "helmet", "no-helmet",
+            "safety vest", "no-safety vest", "vest", "no-vest",
+            "mask", "no-mask",
+            "gloves", "no-gloves", "glove", "no-glove"
+        }
+
         self.violation_classes = {
             cid for cid, name in self.class_names.items()
-            if name.lower().startswith("no-") or name.lower().startswith("no_")
+            if (name.lower().startswith("no-") or name.lower().startswith("no_"))
+            and name.lower() in self.allowed_classes
         }
         self.ignore_classes = {
             cid for cid, name in self.class_names.items()
-            if name.lower() == "person"
+            if name.lower() not in self.allowed_classes
         }
         self.conf = conf
 
@@ -57,12 +66,39 @@ class PPEDetector:
         persons = []
         for box in human_boxes:
             person = {"box": box, "ppe": [], "violations": [], "compliant": True}
+            
+            # 1. Collect all overlapping PPE for this person
+            ppe_for_person = []
             for ppe in ppe_detections:
-                if self._ioa(box, ppe["box"]) >= 0.15:
+                if self._ioa(box, ppe["box"]) >= 0.40:
+                    ppe_for_person.append(ppe)
+                    
+            # 2. Conflict Resolution: If a positive class is found, ignore negative class predictors
+            detected_classes = [p["class_name"].lower() for p in ppe_for_person]
+            has_helmet = any(c in {"helmet", "hardhat"} for c in detected_classes)
+            has_vest   = any(c in {"safety vest", "vest"} for c in detected_classes)
+            has_mask   = any(c in {"mask"} for c in detected_classes)
+            has_glove  = any(c in {"gloves", "glove"} for c in detected_classes)
+            
+            for ppe in ppe_for_person:
+                cname = ppe["class_name"].lower()
+                is_false_alarm = False
+                
+                if has_helmet and cname in {"no-helmet", "no-hardhat"}:
+                    is_false_alarm = True
+                if has_vest and cname in {"no-safety vest", "no-vest"}:
+                    is_false_alarm = True
+                if has_mask and cname in {"no-mask"}:
+                    is_false_alarm = True
+                if has_glove and cname in {"no-gloves", "no-glove"}:
+                    is_false_alarm = True
+                    
+                if not is_false_alarm:
                     person["ppe"].append(ppe)
                     if ppe["is_violation"]:
                         person["violations"].append(ppe["class_name"])
                         person["compliant"] = False
+                        
             persons.append(person)
         return persons
 
@@ -76,33 +112,3 @@ class PPEDetector:
             return 0.0
         return float((ix2-ix1)*(iy2-iy1) / max((ex2-ex1)*(ey2-ey1), 1e-6))
 
-
-# ── Approach B: Per-person crop (experimental, slower ~1.5 FPS) ──────────────
-# Crops each detected person and runs PPE model at higher effective resolution.
-# Improves detection of small items (mask, gloves) but too slow for real-time.
-#
-# import cv2
-# CROP_PADDING = 0.15
-# CROP_SIZE    = 640
-#
-# def _detect_ppe_crop(self, frame, human_boxes, h, w):
-#     all_ppe = []
-#     for box in human_boxes:
-#         crop, ox, oy, sx, sy = self._crop_person(frame, box, h, w)
-#         ppe_res = self.ppe_model(crop, conf=self.conf, verbose=False)[0]
-#         for det in self._parse_ppe_boxes(ppe_res):
-#             cx1, cy1, cx2, cy2 = det["box"]
-#             det["box"] = np.array([ox+cx1*sx, oy+cy1*sy, ox+cx2*sx, oy+cy2*sy])
-#             all_ppe.append(det)
-#     return self._nms_ppe(all_ppe)
-#
-# def _crop_person(self, frame, box, h, w):
-#     x1, y1, x2, y2 = box
-#     bw, bh = x2-x1, y2-y1
-#     px1 = max(0, int(x1 - bw*CROP_PADDING))
-#     py1 = max(0, int(y1 - bh*CROP_PADDING))
-#     px2 = min(w, int(x2 + bw*CROP_PADDING))
-#     py2 = min(h, int(y2 + bh*CROP_PADDING))
-#     crop = frame[py1:py2, px1:px2]
-#     cw, ch = crop.shape[1], crop.shape[0]
-#     return cv2.resize(crop, (CROP_SIZE, CROP_SIZE)), px1, py1, cw/CROP_SIZE, ch/CROP_SIZE
