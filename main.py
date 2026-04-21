@@ -15,8 +15,8 @@ from src.detector import PPEDetector
 from src.visualizer import draw_results
 
 HUMAN_MODEL   = "models/20260324_human.pt"
-PPE_MODEL     = "models/ppe_model3.pt"
-GLOVE_MASK_MODEL = "models/best-glove-mask-only.pt"
+PPE_MODEL     = "models/ppe_model1.pt"
+GLOVE_MASK_MODEL = "models/glove-mask.pt"
 DEFAULT_VIDEO = "videos/GUNSAN_cam14_20251222_183405.mp4"
 OUTPUT_DIR    = Path("outputs")
 
