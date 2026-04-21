@@ -16,11 +16,7 @@ from src.visualizer import draw_results
 
 HUMAN_MODEL   = "models/20260324_human.pt"
 PPE_MODEL     = "models/ppe_model1.pt"
-<<<<<<< HEAD
-GLOVE_MASK_MODEL = "models/best-glove-mask-only.pt"
-=======
 GLOVE_MASK_MODEL = "models/glove-mask.pt"
->>>>>>> 3bebab97616a3681e9fd0f9eab3e2ef9cbfd47ce
 DEFAULT_VIDEO = "videos/GUNSAN_cam14_20251222_183405.mp4"
 OUTPUT_DIR    = Path("outputs")
 
