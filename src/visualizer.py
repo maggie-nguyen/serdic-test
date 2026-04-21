@@ -71,16 +71,20 @@ def _draw_ppe_box(frame, ppe):
 
 def _draw_person_box(frame, person):
     x1, y1, x2, y2 = person["box"].astype(int)
+    h_conf = person.get("conf", 0.0)
+    prefix = f"Human {h_conf:.2f}"
+    
     if not person["ppe"]:
-        color, status = COLORS["unknown"], "Worker"
+        color, status = COLORS["unknown"], f"{prefix} Worker"
     elif person["compliant"]:
-        color, status = COLORS["safe"], "SAFE"
+        color, status = COLORS["safe"], f"{prefix} SAFE"
     else:
         violations = [LABEL_MAP.get(v, v) for v in person["violations"]]
         color  = COLORS["violation"]
-        status = f"VIOLATION: {', '.join(violations)}"
-    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
-    _put_label(frame, status, x1, y2 + 18, color, font_scale=0.55, thickness=2)
+        status = f"{prefix} VIOLATION: {', '.join(violations)}"
+    
+    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+    _put_label(frame, status, x1, y2 + 18, color)
 
 
 def _draw_hud(frame, persons, fps):

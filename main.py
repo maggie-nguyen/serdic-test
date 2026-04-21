@@ -1,8 +1,13 @@
-from __future__ import annotations
-
+import os
 import argparse
 import time
 from pathlib import Path
+
+# Fix for Qt/Wayland plugin and font warnings in Linux environments
+if os.name == "posix":
+    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+    # Suppress Qt font warnings and Wayland noise
+    os.environ["QT_LOGGING_RULES"] = "qt.qpa.fonts.warning=false;qt.qpa.plugin=false"
 
 import cv2
 
@@ -26,17 +31,17 @@ ALL_VIDEOS = [
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser()
-    p.add_argument("--video", "-v", default=DEFAULT_VIDEO)
-    p.add_argument("--all", "-a", action="store_true")
-    p.add_argument("--human-model", default=HUMAN_MODEL)
-    p.add_argument("--ppe-model", default=PPE_MODEL)
-    p.add_argument("--conf", "-c", type=float, default=0.25)
-    p.add_argument("--start", type=float, default=0.0, help="Start time in seconds")
-    p.add_argument("--save", "-s", action="store_true")
-    p.add_argument("--no-show", action="store_true")
-    p.add_argument("--scale", type=float, default=1.0, help="Scale factor for resolution (e.g. 0.5)")
-    p.add_argument("--skip", type=int, default=1, help="Process every N-th frame")
+    p = argparse.ArgumentParser(description="Industrial Safety PPE Detection Pipeline - Stage 1: Human, Stage 2: PPE")
+    p.add_argument("--video", "-v", default=DEFAULT_VIDEO, help="Path to the input video file (default: %(default)s)")
+    p.add_argument("--all", "-a", action="store_true", help="Process all predefined industrial videos")
+    p.add_argument("--human-model", default=HUMAN_MODEL, help="Path to the human detection model (default: %(default)s)")
+    p.add_argument("--ppe-model", default=PPE_MODEL, help="Path to the PPE detection model (default: %(default)s)")
+    p.add_argument("--conf", "-c", type=float, default=0.25, help="Confidence threshold for detections (default: %(default)s)")
+    p.add_argument("--start", type=float, default=0.0, help="Start processing from this time in seconds (default: %(default)s)")
+    p.add_argument("--save", "-s", action="store_true", help="Save the annotated output video to the 'outputs' directory")
+    p.add_argument("--no-show", action="store_true", help="Disable the live preview window (faster processing)")
+    p.add_argument("--scale", type=float, default=1.0, help="Resolution scaling factor (e.g., 0.5 for 50%% size) (default: %(default)s)")
+    p.add_argument("--skip", type=int, default=1, help="Frame skipping interval; processes every N-th frame (default: %(default)s)")
     return p.parse_args()
 
 

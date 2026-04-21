@@ -1,6 +1,14 @@
 # Project Backlog & Decision Log
 
-## Decision Log (Latest to Previous / Timeline flows Bottom to Top)
+### [2026-04-21] Decision: Crop-Based PPE Inference & Confidence Display
+- **Action**: Refactored `src/detector.py` to perform PPE inference on human crops and updated `src/visualizer.py` to show "Human [conf]" prefix.
+- **Decision**: Use human detection crops as input for Stage 2 (PPE detection) instead of full-frame association.
+- **Rationale**: Improves PPE association accuracy and potentially detection performance for small items. Added human detection confidence to worker labels as requested by the user.
+
+### [2026-04-20] Decision: Fix Qt/Wayland Display Warnings
+- **Action**: Forced `QT_QPA_PLATFORM=xcb` and suppressed `QT_LOGGING_RULES` noise in `main.py`.
+- **Decision**: Use XWayland (xcb) as a fallback for OpenCV's Qt backend on Linux systems.
+- **Rationale**: Prevented "Could not find the Qt platform plugin 'wayland'" and "Cannot find font directory" warnings from cluttering the terminal output when `--no-show` is not used.
 
 ### [2026-04-20] Decision: Revert to Native ROCm & Python 3.12
 - **Action**: Removed OpenVINO integration and restored native PyTorch ROCm/CUDA backend.

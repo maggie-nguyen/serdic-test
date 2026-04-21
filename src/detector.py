@@ -49,52 +49,70 @@ class PPEDetector:
 
     def detect(self, frame: np.ndarray) -> tuple[list[dict], list[dict]]:
         # Stage 1: human detection
-        human_res   = self.human_model(frame, conf=self.conf, verbose=False)[0]
-        human_boxes = list(human_res.boxes.xyxy.cpu().numpy()) if len(human_res.boxes) > 0 else []
-
-        # Stage 2: PPE detection on full frame
-        ppe_res = self.ppe_model(frame, conf=self.conf, verbose=False)[0]
-        ppe_detections: list[dict] = []
-
-        if len(ppe_res.boxes) > 0:
-            boxes  = ppe_res.boxes.xyxy.cpu().numpy()
-            scores = ppe_res.boxes.conf.cpu().numpy()
-            cids   = ppe_res.boxes.cls.cpu().numpy().astype(int)
-            for i in range(len(boxes)):
-                cid = int(cids[i])
-                if cid in self.ignore_classes:
+        human_res = self.human_model(frame, conf=self.conf, verbose=False)[0]
+        
+        persons: list[dict] = []
+        all_ppe_detections: list[dict] = []
+        
+        if len(human_res.boxes) > 0:
+            h_boxes  = human_res.boxes.xyxy.cpu().numpy()
+            h_scores = human_res.boxes.conf.cpu().numpy()
+            
+            for i, h_box in enumerate(h_boxes):
+                h_conf = float(h_scores[i])
+                # Ensure coordinates are within frame boundaries
+                x1, y1, x2, y2 = h_box.astype(int)
+                fh, fw = frame.shape[:2]
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(fw, x2), min(fh, y2)
+                
+                if x2 <= x1 or y2 <= y1:
                     continue
-                ppe_detections.append({
-                    "box":          boxes[i],
-                    "conf":         float(scores[i]),
-                    "class_name":   self.class_names[cid],
-                    "is_violation": cid in self.violation_classes,
+                
+                # Crop for this specific person
+                crop = frame[y1:y2, x1:x2]
+                
+                # Stage 2: PPE detection on the person crop
+                ppe_res = self.ppe_model(crop, conf=self.conf, verbose=False)[0]
+                
+                person_ppe: list[dict] = []
+                person_violations: list[str] = []
+                person_compliant = True
+                
+                if len(ppe_res.boxes) > 0:
+                    p_boxes  = ppe_res.boxes.xyxy.cpu().numpy()
+                    p_scores = ppe_res.boxes.conf.cpu().numpy()
+                    p_cids   = ppe_res.boxes.cls.cpu().numpy().astype(int)
+                    
+                    for j in range(len(p_boxes)):
+                        cid = int(p_cids[j])
+                        if cid in self.ignore_classes:
+                            continue
+                            
+                        # Translate crop-relative coordinates back to global frame coordinates
+                        px1, py1, px2, py2 = p_boxes[j]
+                        global_ppe_box = np.array([px1 + x1, py1 + y1, px2 + x1, py2 + y1])
+                        
+                        ppe_info = {
+                            "box":          global_ppe_box,
+                            "conf":         float(p_scores[j]),
+                            "class_name":   self.class_names[cid],
+                            "is_violation": cid in self.violation_classes,
+                        }
+                        
+                        person_ppe.append(ppe_info)
+                        all_ppe_detections.append(ppe_info)
+                        
+                        if ppe_info["is_violation"]:
+                            person_violations.append(ppe_info["class_name"])
+                            person_compliant = False
+                
+                persons.append({
+                    "box":        h_box,
+                    "conf":       h_conf,
+                    "ppe":        person_ppe,
+                    "violations": person_violations,
+                    "compliant":  person_compliant,
                 })
-
-        persons = self._associate(human_boxes, ppe_detections)
-        return persons, ppe_detections
-
-    def _associate(self, human_boxes, ppe_detections):
-        persons = []
-        for box in human_boxes:
-            person = {"box": box, "ppe": [], "violations": [], "compliant": True}
-            for ppe in ppe_detections:
-                if self._ioa(box, ppe["box"]) >= 0.15:
-                    person["ppe"].append(ppe)
-                    if ppe["is_violation"]:
-                        person["violations"].append(ppe["class_name"])
-                        person["compliant"] = False
-            persons.append(person)
-        return persons
-
-    @staticmethod
-    def _ioa(person_box, ppe_box) -> float:
-        px1, py1, px2, py2 = person_box
-        ex1, ey1, ex2, ey2 = ppe_box
-        ix1, iy1 = max(px1, ex1), max(py1, ey1)
-        ix2, iy2 = min(px2, ex2), min(py2, ey2)
-        if ix2 <= ix1 or iy2 <= iy1:
-            return 0.0
-        inter = (ix2 - ix1) * (iy2 - iy1)
-        ppe_area = max((ex2 - ex1) * (ey2 - ey1), 1e-6)
-        return float(inter / ppe_area)
+        
+        return persons, all_ppe_detections
